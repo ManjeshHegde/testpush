@@ -1,1 +1,126 @@
-my new file contents
+/*
+
+        -------------------------------------------------------------------------------------------------
+            Formula Name 			-		GW_INT_GET_EMP_LAST_HIRE_DATE_FF
+            Formula Type 			-		Extract Rule
+            Formula Start Date		-		18-Oct-2023
+            Formula Completion Date	-		Expected Dead Line for the Formula
+        -------------------------------------------------------------------------------------------------
+            Seq		Developed By				Version		Date			Comments
+            1		OCS			                1.0.0		18-Oct-2023     Development Started
+        -------------------------------------------------------------------------------------------------
+*/
+
+/* @Section - default for DBI's */
+
+/* @Section - input variables */
+inputs are DATA_ELEMENTS (TEXT_TEXT)
+
+default for DATA_ELEMENTS is EMPTY_TEXT_TEXT
+
+/* @Section - local variable declaration and initialization */
+
+l_asg_id            = 'XX'
+l_person_id         = 'XX'
+l_last_hire_date    = '1901/01/01'
+l_glb_transf_flag   = 'N'
+l_sys_per_type      = 'XX'
+l_hire_date         = '1901/01/01'
+
+RULE_VALUE          = '1901/01/01'
+
+/* Prerequisites starts
+This formula is to derive the Hire Date/Rehire Date/Latest Hire Date.
+
+Below DBIs must be present in the HCM Extarct that uses this FF and output column number of these fields must be lower than this coulmn's output column number
+
+-Person_ID
+-Assignment_ID
+-Assignment_End_Date
+-System_Person_Type
+-Date_of_Hire
+
+Value sets written at the bottom must be created before using the FF
+This FF must be migrated to or created in the higher instances before migrating the interfaces that use this FF
+
+Prerequisites end  */
+
+log = ess_log_write('--------------GW_INT_GET_EMP_LAST_HIRE_DATE_FF Formula Begins--------------')
+
+
+
+if DATA_ELEMENTS.exists('Assignment_ID') and DATA_ELEMENTS.exists('Person_ID') and DATA_ELEMENTS.exists('Assignment_End_Date') and DATA_ELEMENTS.exists('System_Person_Type') and DATA_ELEMENTS.exists('Date_of_Hire')then 
+(   
+    l_sys_per_type = DATA_ELEMENTS['System_Person_Type']
+    l_hire_date = TO_CHAR(TO_DATE(SUBSTR(TRANSLATE(DATA_ELEMENTS['Date_of_Hire'],'01234567890:.-TZ', '01234567890:.- '), 1, 10), 'YYYY-MM-DD'),'YYYY/MM/DD')
+    log =  ess_log_write('GW_INT_GET_EMP_LAST_HIRE_DATE_FF - l_sys_per_type => '+ l_sys_per_type)
+    log =  ess_log_write('GW_INT_GET_EMP_LAST_HIRE_DATE_FF - l_hire_date => '+ l_hire_date)
+
+    /* this hire date logic is only for Employee system person type */
+    if l_sys_per_type = 'EMP' then
+    (
+        l_asg_id = DATA_ELEMENTS['Assignment_ID']
+        l_person_id = DATA_ELEMENTS['Person_ID']
+        l_asg_end_date = TO_DATE(SUBSTR(TRANSLATE(DATA_ELEMENTS['Assignment_End_Date'],'01234567890:.-TZ', '01234567890:.- '), 1, 10), 'YYYY-MM-DD')
+
+
+        log =  ess_log_write('GW_INT_GET_EMP_LAST_HIRE_DATE_FF - l_asg_id => '+ l_asg_id)
+        log =  ess_log_write('GW_INT_GET_EMP_LAST_HIRE_DATE_FF - l_person_id => '+ l_person_id)
+        log =  ess_log_write('GW_INT_GET_EMP_LAST_HIRE_DATE_FF - l_asg_end_date => '+ to_char(l_asg_end_date))
+
+        l_last_hire_date = get_value_set('GW_INT_GET_EMP_LASTEST_HIRE_REHIRE_DATE_VS',
+                            '|=P_PERSON_ID='''||l_person_id||''''
+                           )
+        log =  ess_log_write('GW_INT_GET_EMP_LAST_HIRE_DATE_FF - l_last_hire_date => '+ l_last_hire_date)
+
+    )
+    else
+    (
+        l_last_hire_date = l_hire_date
+    )
+
+    RULE_VALUE = l_last_hire_date
+    
+)
+
+
+/* @Section - Business Logic and Interface */
+
+
+log =  ess_log_write('GW_INT_GET_EMP_LAST_HIRE_DATE_FF -  RULE_VALUE => '+ RULE_VALUE)
+
+log = ess_log_write('-----------GW_INT_GET_EMP_LAST_HIRE_DATE_FF Formula Ends-------------')
+/* @Section - return variables */
+RETURN RULE_VALUE
+
+
+
+/*
+
+-----GW_INT_GET_EMP_LASTEST_HIRE_REHIRE_DATE_VS-----1st value set
+
+SELECT 
+TO_CHAR(ppos.date_start,'YYYY/MM/DD')
+
+FROM
+per_all_assignments_m   paam
+,per_periods_of_service ppos
+,per_person_types_vl    pptvl
+
+WHERE
+paam.person_id = :{PARAMETER.P_PERSON_ID}
+AND paam.assignment_type = 'E'
+AND paam.effective_latest_change = 'Y'
+--AND TO_DATE(:{PARAMETER.P_EFFECTIVE_DATE},'YYYY/MM/DD') BETWEEN paam.effective_start_date AND paam.effective_end_date
+AND paam.action_code IN ('HIRE','REHIRE')
+
+AND paam.period_of_service_id = ppos.period_of_service_id
+
+AND paam.person_type_id = pptvl.person_type_id
+AND pptvl.user_person_type NOT IN ('Grandfathered LTD','Severance','Retiree')
+
+ORDER BY ppos.date_start DESC
+
+
+
+*/
